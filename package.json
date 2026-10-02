@@ -1,6 +1,6 @@
 {
   "name": "opencode-message-copy",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Fuzzy-search and copy any user or assistant message from the OpenCode TUI.",
   "type": "module",
   "license": "MIT",
@@ -21,6 +21,11 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "0.4.5",
+    "@opentui/solid": "0.4.5",
+    "solid-js": "1.9.10"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "latest",

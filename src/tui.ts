@@ -1,12 +1,17 @@
 import type {
   TuiDialogSelectOption,
   TuiPlugin,
+  TuiPluginApi,
   TuiPluginModule,
 } from "@opencode-ai/plugin/tui"
+import { SyntaxStyle } from "@opentui/core"
+import { jsx, jsxs, type JSX } from "@opentui/solid/jsx-runtime"
+import { createSignal } from "solid-js"
 import { copyPlainText } from "./clipboard.ts"
 
 const COMMAND = "message-copy.open"
 const DEFAULT_BINDING = "<leader>Y"
+const PREVIEW_HEIGHT = 16
 
 type Options = {
   binding?: string | false
@@ -52,6 +57,10 @@ function searchable(text: string): string {
   return text.replace(/\s+/g, " ").trim()
 }
 
+function roleLabel(choice: Choice): string {
+  return choice.role === "assistant" ? "Assistant" : "User"
+}
+
 function timeLabel(timestamp: number | undefined): string | undefined {
   if (!timestamp || !Number.isFinite(timestamp)) return
   return new Date(timestamp).toLocaleString(undefined, {
@@ -60,6 +69,132 @@ function timeLabel(timestamp: number | undefined): string | undefined {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+function createSyntaxStyle(api: TuiPluginApi) {
+  const theme = api.theme.current
+
+  return SyntaxStyle.fromTheme([
+    { scope: ["default"], style: { foreground: theme.text } },
+    { scope: ["comment", "comment.documentation"], style: { foreground: theme.syntaxComment, italic: true } },
+    { scope: ["string", "symbol", "character"], style: { foreground: theme.syntaxString } },
+    { scope: ["number", "boolean", "float", "constant"], style: { foreground: theme.syntaxNumber } },
+    {
+      scope: ["keyword", "keyword.return", "keyword.conditional", "keyword.repeat"],
+      style: { foreground: theme.syntaxKeyword },
+    },
+    {
+      scope: ["function", "function.call", "function.method", "constructor"],
+      style: { foreground: theme.syntaxFunction },
+    },
+    { scope: ["type", "class", "module"], style: { foreground: theme.syntaxType } },
+    {
+      scope: ["operator", "keyword.operator", "punctuation", "punctuation.delimiter"],
+      style: { foreground: theme.syntaxOperator },
+    },
+    {
+      scope: ["markup.heading", "markup.heading.1", "markup.heading.2", "markup.heading.3"],
+      style: { foreground: theme.markdownHeading, bold: true },
+    },
+    { scope: ["markup.bold", "markup.strong"], style: { foreground: theme.markdownStrong, bold: true } },
+    { scope: ["markup.italic"], style: { foreground: theme.markdownEmph, italic: true } },
+    { scope: ["markup.list"], style: { foreground: theme.markdownListItem } },
+    { scope: ["markup.quote"], style: { foreground: theme.markdownBlockQuote, italic: true } },
+    {
+      scope: ["markup.raw", "markup.raw.block", "markup.raw.inline"],
+      style: { foreground: theme.markdownCode },
+    },
+    { scope: ["markup.link", "markup.link.url"], style: { foreground: theme.markdownLink, underline: true } },
+    { scope: ["markup.link.label"], style: { foreground: theme.markdownLinkText, underline: true } },
+  ])
+}
+
+function copyChoice(api: TuiPluginApi, choice: Choice) {
+  api.ui.dialog.clear()
+
+  void copyPlainText(choice.text).then((result) => {
+    if (!result.ok) {
+      api.ui.toast({
+        variant: "error",
+        message:
+          "Could not access a clipboard. Install wl-clipboard, xclip, or xsel on Linux, or use an OSC52-capable terminal.",
+      })
+      return
+    }
+
+    api.ui.toast({
+      variant: "success",
+      message: `Copied ${choice.role} message${result.method ? ` via ${result.method}` : ""}.`,
+    })
+  })
+}
+
+function MessagePicker(props: {
+  api: TuiPluginApi
+  choices: Choice[]
+  options: TuiDialogSelectOption<Choice>[]
+}): JSX.Element {
+  const [selected, setSelected] = createSignal(props.choices[0]!)
+  const theme = props.api.theme.current
+  const syntax = createSyntaxStyle(props.api)
+
+  const picker = props.api.ui.DialogSelect<Choice>({
+    title: "Copy message",
+    placeholder: "Fuzzy search full message text",
+    options: props.options,
+    flat: true,
+    onMove(option) {
+      setSelected(option.value)
+    },
+    onSelect(option) {
+      copyChoice(props.api, option.value)
+    },
+  })
+
+  const previewHeader = jsx("text", {
+    fg: theme.textMuted,
+    get children() {
+      const choice = selected()
+      const time = timeLabel(choice.created)
+      return `${roleLabel(choice)}${time ? ` · ${time}` : ""} · Enter to copy`
+    },
+  })
+
+  const preview = jsx("scrollbox", {
+    maxHeight: PREVIEW_HEIGHT,
+    minHeight: 6,
+    scrollbarOptions: { visible: true },
+    children: jsx("markdown", {
+      syntaxStyle: syntax,
+      streaming: false,
+      internalBlockMode: "top-level",
+      tableOptions: { style: "grid" },
+      conceal: true,
+      fg: theme.markdownText,
+      bg: theme.background,
+      get content() {
+        return selected().text
+      },
+    }),
+  })
+
+  const previewPane = jsxs("box", {
+    flexDirection: "column",
+    flexShrink: 0,
+    border: ["top"],
+    borderColor: theme.border,
+    paddingTop: 1,
+    paddingLeft: 4,
+    paddingRight: 4,
+    gap: 1,
+    children: [previewHeader, preview],
+  })
+
+  return jsxs("box", {
+    flexDirection: "column",
+    flexGrow: 1,
+    children: [picker, previewPane],
+  }) as JSX.Element
 }
 
 const tui: TuiPlugin = async (api, rawOptions) => {
@@ -114,41 +249,15 @@ const tui: TuiPlugin = async (api, rawOptions) => {
     }
 
     const selectOptions: TuiDialogSelectOption<Choice>[] = choices.map((choice) => ({
-      // DialogSelect fuzzy-searches `title`. Keep the *full* message here and
-      // let the native dialog truncate only its rendered preview.
-      title: `${choice.role === "assistant" ? "Assistant" : "User"} · ${searchable(choice.text)}`,
+      // DialogSelect fuzzy-searches `title`. Keep the full message here and
+      // let the native dialog truncate only its rendered row.
+      title: `${roleLabel(choice)} · ${searchable(choice.text)}`,
       footer: timeLabel(choice.created),
       value: choice,
     }))
 
     api.ui.dialog.setSize("xlarge")
-    api.ui.dialog.replace(() =>
-      api.ui.DialogSelect<Choice>({
-        title: "Copy message",
-        placeholder: "Fuzzy search full message text",
-        options: selectOptions,
-        flat: true,
-        onSelect(option) {
-          const choice = option.value
-          api.ui.dialog.clear()
-
-          void copyPlainText(choice.text).then((result) => {
-            if (!result.ok) {
-              api.ui.toast({
-                variant: "error",
-                message: "Could not access a clipboard. Install wl-clipboard, xclip, or xsel on Linux, or use an OSC52-capable terminal.",
-              })
-              return
-            }
-
-            api.ui.toast({
-              variant: "success",
-              message: `Copied ${choice.role} message${result.method ? ` via ${result.method}` : ""}.`,
-            })
-          })
-        },
-      }),
-    )
+    api.ui.dialog.replace(() => MessagePicker({ api, choices, options: selectOptions }))
   }
 
   api.keymap.registerLayer({
