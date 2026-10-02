@@ -3,15 +3,18 @@ import type {
   TuiPlugin,
   TuiPluginApi,
   TuiPluginModule,
+  TuiSlotPlugin,
 } from "@opencode-ai/plugin/tui"
-import { SyntaxStyle } from "@opentui/core"
+import { RGBA, SyntaxStyle } from "@opentui/core"
+import { useTerminalDimensions } from "@opentui/solid"
 import { jsx, jsxs, type JSX } from "@opentui/solid/jsx-runtime"
 import { createSignal } from "solid-js"
 import { copyPlainText } from "./clipboard.ts"
 
 const COMMAND = "message-copy.open"
+const CLOSE_COMMAND = "message-copy.close"
+const MODE = "message-copy"
 const DEFAULT_BINDING = "<leader>Y"
-const PREVIEW_HEIGHT = 16
 
 type Options = {
   binding?: string | false
@@ -24,6 +27,11 @@ type Choice = {
   role: "user" | "assistant"
   text: string
   created?: number
+}
+
+type PickerState = {
+  choices: Choice[]
+  options: TuiDialogSelectOption<Choice>[]
 }
 
 function readOptions(value: unknown): Required<Pick<Options, "includeUser" | "includeAssistant">> & {
@@ -109,8 +117,8 @@ function createSyntaxStyle(api: TuiPluginApi) {
   ])
 }
 
-function copyChoice(api: TuiPluginApi, choice: Choice) {
-  api.ui.dialog.clear()
+function copyChoice(api: TuiPluginApi, choice: Choice, close: () => void) {
+  close()
 
   void copyPlainText(choice.text).then((result) => {
     if (!result.ok) {
@@ -131,23 +139,27 @@ function copyChoice(api: TuiPluginApi, choice: Choice) {
 
 function MessagePicker(props: {
   api: TuiPluginApi
-  choices: Choice[]
-  options: TuiDialogSelectOption<Choice>[]
+  state: PickerState
+  close: () => void
 }): JSX.Element {
-  const [selected, setSelected] = createSignal(props.choices[0]!)
+  const [selected, setSelected] = createSignal(props.state.choices[0]!)
+  const dimensions = useTerminalDimensions()
   const theme = props.api.theme.current
   const syntax = createSyntaxStyle(props.api)
 
+  const panelWidth = () => Math.max(1, Math.min(dimensions().width - 2, Math.floor(dimensions().width * 0.8)))
+  const panelHeight = () => Math.max(1, Math.min(dimensions().height - 2, Math.floor(dimensions().height * 0.8)))
+
   const picker = props.api.ui.DialogSelect<Choice>({
-    title: "Copy message",
+    title: "Messages",
     placeholder: "Fuzzy search full message text",
-    options: props.options,
+    options: props.state.options,
     flat: true,
     onMove(option) {
       setSelected(option.value)
     },
     onSelect(option) {
-      copyChoice(props.api, option.value)
+      copyChoice(props.api, option.value, props.close)
     },
   })
 
@@ -161,8 +173,9 @@ function MessagePicker(props: {
   })
 
   const preview = jsx("scrollbox", {
-    maxHeight: PREVIEW_HEIGHT,
-    minHeight: 6,
+    width: "100%",
+    height: "100%",
+    flexGrow: 1,
     scrollbarOptions: { visible: true },
     children: jsx("markdown", {
       syntaxStyle: syntax,
@@ -178,27 +191,111 @@ function MessagePicker(props: {
     }),
   })
 
+  const listPane = jsx("box", {
+    width: "42%",
+    height: "100%",
+    flexShrink: 0,
+    border: ["right"],
+    borderColor: theme.border,
+    children: picker,
+  })
+
   const previewPane = jsxs("box", {
     flexDirection: "column",
-    flexShrink: 0,
-    border: ["top"],
-    borderColor: theme.border,
+    flexGrow: 1,
+    height: "100%",
+    minWidth: 1,
     paddingTop: 1,
-    paddingLeft: 4,
-    paddingRight: 4,
+    paddingBottom: 1,
+    paddingLeft: 3,
+    paddingRight: 3,
     gap: 1,
     children: [previewHeader, preview],
   })
 
-  return jsxs("box", {
-    flexDirection: "column",
+  const content = jsxs("box", {
+    flexDirection: "row",
     flexGrow: 1,
-    children: [picker, previewPane],
+    minHeight: 1,
+    children: [listPane, previewPane],
+  })
+
+  const header = jsxs("box", {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    flexShrink: 0,
+    paddingLeft: 2,
+    paddingRight: 2,
+    paddingBottom: 1,
+    children: [
+      jsx("text", { fg: theme.text, children: "Copy message" }),
+      jsx("text", {
+        fg: theme.textMuted,
+        onMouseUp: props.close,
+        children: "esc",
+      }),
+    ],
+  })
+
+  const panel = jsxs("box", {
+    get width() {
+      return panelWidth()
+    },
+    get height() {
+      return panelHeight()
+    },
+    flexDirection: "column",
+    backgroundColor: theme.backgroundPanel,
+    border: true,
+    borderColor: theme.border,
+    paddingTop: 1,
+    onMouseUp(event: { stopPropagation(): void }) {
+      event.stopPropagation()
+    },
+    children: [header, content],
+  })
+
+  return jsx("box", {
+    get width() {
+      return dimensions().width
+    },
+    get height() {
+      return dimensions().height
+    },
+    position: "absolute",
+    zIndex: 3500,
+    left: 0,
+    top: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: RGBA.fromInts(0, 0, 0, 160),
+    onMouseUp: props.close,
+    children: panel,
   }) as JSX.Element
 }
 
 const tui: TuiPlugin = async (api, rawOptions) => {
   const options = readOptions(rawOptions)
+  const [picker, setPicker] = createSignal<PickerState>()
+  let popMode: (() => void) | undefined
+
+  const close = () => {
+    setPicker(undefined)
+    popMode?.()
+    popMode = undefined
+  }
+
+  const slot: TuiSlotPlugin = {
+    slots: {
+      app() {
+        const state = picker()
+        if (!state) return null
+        return MessagePicker({ api, state, close })
+      },
+    },
+  }
+  api.slots.register(slot)
+  api.lifecycle.onDispose(close)
 
   const open = () => {
     const route = api.route.current
@@ -256,8 +353,8 @@ const tui: TuiPlugin = async (api, rawOptions) => {
       value: choice,
     }))
 
-    api.ui.dialog.setSize("xlarge")
-    api.ui.dialog.replace(() => MessagePicker({ api, choices, options: selectOptions }))
+    setPicker({ choices, options: selectOptions })
+    if (!popMode) popMode = api.mode.push(MODE)
   }
 
   api.keymap.registerLayer({
@@ -281,6 +378,21 @@ const tui: TuiPlugin = async (api, rawOptions) => {
           },
         ]
       : [],
+  })
+
+  api.keymap.registerLayer({
+    mode: MODE,
+    commands: [
+      {
+        name: CLOSE_COMMAND,
+        title: "Close message picker",
+        run: close,
+      },
+    ],
+    bindings: [
+      { key: "escape", cmd: CLOSE_COMMAND, desc: "Close message picker" },
+      { key: "ctrl+c", cmd: CLOSE_COMMAND, desc: "Close message picker" },
+    ],
   })
 }
 

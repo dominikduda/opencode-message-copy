@@ -1,6 +1,6 @@
 {
   "name": "opencode-message-copy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Fuzzy-search and copy any user or assistant message from the OpenCode TUI.",
   "type": "module",
   "license": "MIT",
