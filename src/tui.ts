@@ -152,7 +152,6 @@ const tui: TuiPlugin = async (api, rawOptions) => {
   }
 
   api.keymap.registerLayer({
-    mode: "base",
     commands: [
       {
         name: COMMAND,
