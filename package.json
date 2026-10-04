@@ -1,26 +1,59 @@
 {
   "name": "opencode-message-copy",
   "version": "0.3.0",
-  "description": "Fuzzy-search and copy any user or assistant message from the OpenCode TUI.",
+  "description": "Fuzzy-search, preview, and copy any user or assistant message from the OpenCode TUI.",
   "type": "module",
   "license": "MIT",
+  "author": "dominikduda",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dominikduda/opencode-message-copy.git"
+  },
+  "homepage": "https://github.com/dominikduda/opencode-message-copy#readme",
+  "bugs": {
+    "url": "https://github.com/dominikduda/opencode-message-copy/issues"
+  },
   "keywords": [
     "opencode",
     "opencode-plugin",
+    "opencode-tui-plugin",
     "tui",
-    "clipboard"
+    "clipboard",
+    "fuzzy-search",
+    "message-copy"
   ],
+  "engines": {
+    "opencode": ">=1.18.34 <2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
-    ".": "./src/tui.ts",
-    "./tui": "./src/tui.ts"
+    ".": {
+      "types": "./dist/tui.d.ts",
+      "import": "./dist/tui.js"
+    },
+    "./tui": {
+      "types": "./dist/tui.d.ts",
+      "import": "./dist/tui.js",
+      "config": {
+        "binding": "<leader>Y",
+        "includeUser": true,
+        "includeAssistant": true
+      }
+    }
   },
   "files": [
-    "src",
+    "dist",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "prepack": "npm run typecheck && npm run build",
+    "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
     "@opentui/core": "0.4.5",

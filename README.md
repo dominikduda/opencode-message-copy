@@ -1,76 +1,64 @@
 # opencode-message-copy
 
-A small OpenCode TUI plugin for fuzzy-searching the current session and copying **one specific user or assistant message** as plain text.
+[![npm version](https://img.shields.io/npm/v/opencode-message-copy.svg)](https://www.npmjs.com/package/opencode-message-copy)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-It does not patch OpenCode, walk private renderer internals, or replace the session UI. It uses the public TUI plugin APIs:
-
-- `api.state.session.messages(...)`
-- `api.state.part(...)`
-- `api.ui.DialogSelect`
-- `api.keymap.registerLayer(...)`
-
-OpenCode's native `DialogSelect` already uses fuzzy matching, so the search behaves like other OpenCode pickers.
+OpenCode TUI plugin for fuzzy-searching the current session, previewing the highlighted message as Markdown, and copying one exact user or assistant message as plain text.
 
 ## Features
 
-- Fuzzy-searches the **full text** of every message, not just the visible preview.
-- Includes both user and assistant messages by default.
-- Copies the original text parts without terminal formatting/ANSI sequences.
-- Newest messages appear first when the search box is empty.
-- macOS clipboard support via `pbcopy`.
-- Linux Wayland support via `wl-copy`.
-- Linux X11 support via `xclip` or `xsel`.
-- WSL fallback via `clip.exe`.
-- OSC52 is emitted as an additional/fallback clipboard path, useful in many terminals and remote/tmux workflows.
-- No runtime npm dependencies.
+- Fuzzy-searches the **full text** of every user and assistant message.
+- Shows a responsive split-view picker with a Markdown preview of the highlighted message.
+- Keeps the original message text separate from the rendered preview, so copied text is exact plain text.
+- Shows newest messages first when the search is empty.
+- Opens from `<leader>Y`, `/copy-message`, or the command palette.
+- Supports macOS (`pbcopy`), Linux Wayland (`wl-copy`), Linux X11 (`xclip` / `xsel`), WSL (`clip.exe`), and OSC52-capable terminals.
+
+## Install
+
+### Current OpenCode
+
+```bash
+opencode plugin add opencode-message-copy
+```
+
+You can also configure the TUI plugin directly in `~/.config/opencode/tui.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": ["opencode-message-copy"]
+}
+```
+
+On older OpenCode builds that predate `plugin add`, the equivalent installer command is:
+
+```bash
+opencode plugin opencode-message-copy --global
+```
 
 ## Usage
 
 By default:
 
-- `<leader>Y` opens the picker. OpenCode's default leader is `Ctrl+X`, so this is normally **Ctrl+X, then Shift+Y**.
-- `/copy-message` opens the same picker.
-- The command is also available from OpenCode's command palette as **Copy message**.
-
-Type to fuzzy-filter, use the normal OpenCode select-dialog navigation, and press Enter to copy the selected message.
-
-## Install from GitHub
-
-### Important: TUI plugins belong in `tui.json`
-
-Current OpenCode keeps TUI plugin configuration in `tui.json`, not `opencode.json`.
-
-The OpenCode installer uses npm's package resolver internally (`npm-package-arg` + Arborist), which can resolve Git/GitHub package specs. Git installation is not as prominently documented as npm-package installation, so a local-file fallback is included below.
-
-After uploading this repository to GitHub, add it to your OpenCode `tui.json` (commonly `~/.config/opencode/tui.json`):
-
-```json
-{
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": [
-    "git+https://github.com/YOUR_GITHUB_USERNAME/opencode-message-copy.git"
-  ]
-}
-```
-
-Or install it using OpenCode's plugin command, which should patch the appropriate TUI config automatically:
-
-```bash
-opencode plugin git+https://github.com/YOUR_GITHUB_USERNAME/opencode-message-copy.git --global
-```
-
-You can pin a Git commit/tag in the Git spec if you do not want updates from the repository's default branch.
+- `<leader>Y` opens the picker. With OpenCode's default leader, this is normally `Ctrl+X`, then `Shift+Y`.
+- `/copy-message` opens the same picker from the prompt.
+- **Copy message** is available in the command palette.
+- Typing fuzzy-filters the full message bodies.
+- Arrow keys, `Ctrl+P` / `Ctrl+N`, `Page Up` / `Page Down`, `Home`, and `End` navigate the message list using OpenCode's native select bindings.
+- `Enter` copies the selected message.
+- `Esc` or `Ctrl+C` closes the picker.
 
 ## Configure
 
-A plugin entry may be a tuple containing options:
+A plugin entry may include options:
 
 ```json
 {
   "$schema": "https://opencode.ai/tui.json",
   "plugin": [
     [
-      "git+https://github.com/YOUR_GITHUB_USERNAME/opencode-message-copy.git",
+      "opencode-message-copy",
       {
         "binding": "<leader>Y",
         "includeUser": true,
@@ -81,67 +69,61 @@ A plugin entry may be a tuple containing options:
 }
 ```
 
-Options:
-
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `binding` | `"<leader>Y"` | Shortcut that opens the picker. Set to `false` to disable the shortcut and use the palette or `/copy-message`. |
-| `includeUser` | `true` | Include user messages in the picker. |
-| `includeAssistant` | `true` | Include assistant messages in the picker. |
+| `binding` | `"<leader>Y"` | Shortcut that opens the picker. Set to `false` to disable it. |
+| `includeUser` | `true` | Include user messages. |
+| `includeAssistant` | `true` | Include assistant messages. |
 
-## Local-file fallback
+The package also exposes these defaults through its `./tui` export so OpenCode can write them during package installation.
 
-If your OpenCode build does not accept the Git package spec directly, clone the repository somewhere permanent:
+## Compatibility
+
+- OpenCode `>=1.18.34 <2`
+- macOS, Linux, and WSL clipboard paths are supported.
+- The UI uses OpenCode's public TUI plugin APIs and OpenTUI components; it does not patch OpenCode internals.
+
+## Local development
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/opencode-message-copy.git ~/.local/share/opencode-message-copy
+npm ci
+npm run typecheck
+npm run build
+npm pack --dry-run
 ```
 
-Then reference the package directory from `tui.json`:
+To test the source checkout directly, point `tui.json` at `src/tui.ts`:
 
 ```json
 {
   "$schema": "https://opencode.ai/tui.json",
   "plugin": [
-    "file:///Users/YOU/.local/share/opencode-message-copy"
+    "file:///absolute/path/to/opencode-message-copy/src/tui.ts"
   ]
 }
 ```
 
-On Linux, use your actual absolute path, for example:
+The npm package ships compiled JavaScript and declaration files from `dist/`. `prepack` runs typechecking and the build automatically before `npm pack` or `npm publish`.
 
-```json
-{
-  "plugin": [
-    "file:///home/you/.local/share/opencode-message-copy"
-  ]
-}
-```
-
-OpenCode also supports relative path plugin specs; they are resolved relative to the config file that declares them.
-
-## Linux clipboard notes
-
-For a native desktop clipboard, install one of these:
-
-- Wayland: `wl-copy` from `wl-clipboard`
-- X11: `xclip`
-- X11 alternative: `xsel`
-
-The plugin also emits OSC52. If your terminal accepts OSC52 clipboard sequences, copying may still work without those utilities.
-
-## Development
+## Publishing
 
 ```bash
-npm install
-npm run typecheck
+npm login
+npm pack --dry-run
+npm publish
 ```
 
-The package deliberately exports its TypeScript TUI entry directly. OpenCode runs on Bun and its TUI plugin loader supports TypeScript file plugins/package entrypoints.
+After publishing, verify the package with:
 
-## How fuzzy search works
+```bash
+npm view opencode-message-copy version
+```
 
-The plugin passes the full whitespace-normalized message body as each native `DialogSelect` option's `title`. OpenCode renders only a truncated preview, but its internal fuzzy matcher searches the entire title. The unmodified original message text is retained separately and is what gets copied.
+## How it works
+
+The plugin reads the current session through `api.state.session.messages(...)` and `api.state.part(...)`. Each message's full whitespace-normalized body is used as the native `DialogSelect` search title, while the original text is retained separately for copying.
+
+The picker is rendered in the global `app` slot as a plugin-owned overlay. Moving through the native message list updates a Markdown preview pane, but pressing Enter copies the original unrendered text.
 
 ## License
 
