@@ -278,11 +278,14 @@ const tui: TuiPlugin = async (api, rawOptions) => {
   const options = readOptions(rawOptions)
   const [picker, setPicker] = createSignal<PickerState>()
   let popMode: (() => void) | undefined
+  let restoreFocus: (() => void) | undefined
 
   const close = () => {
     setPicker(undefined)
     popMode?.()
     popMode = undefined
+    restoreFocus?.()
+    restoreFocus = undefined
   }
 
   const slot: TuiSlotPlugin = {
@@ -353,6 +356,13 @@ const tui: TuiPlugin = async (api, rawOptions) => {
       value: choice,
     }))
 
+    const focused = api.renderer.currentFocusedRenderable
+    restoreFocus = () => {
+      setTimeout(() => {
+        if (!focused || focused.isDestroyed) return
+        focused.focus()
+      }, 1)
+    }
     setPicker({ choices, options: selectOptions })
     if (!popMode) popMode = api.mode.push(MODE)
   }
